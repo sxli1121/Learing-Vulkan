@@ -84,6 +84,8 @@ private:
 
 		setupDebugMessenger();
 
+		// 获取支持Vulkan的GPU
+		pickPhysicalDevice();
 	}
 
 	void mainLoop()
@@ -159,6 +161,49 @@ private:
 		glfwDestroyWindow(window);
 
 		glfwTerminate();
+	}
+
+
+	// 查找支持的GPU
+	void pickPhysicalDevice()
+	{
+		VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+
+		uint32_t deviceCount = 0;
+		vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+		if (deviceCount == 0)
+		{
+			throw std::runtime_error("failed to find GPUS with Vulkan support! 没有找到支持Vulkan 的显卡");
+		}
+
+		// 储存显卡信息
+		std::vector<VkPhysicalDevice> devices(deviceCount);
+		vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+
+		// 检测  拿到第一个
+
+		for (const auto& device : devices)
+		{
+			if (isDeviceSuitable(device))
+			{
+				physicalDevice = device;
+				break;
+			}
+		}
+
+		if (physicalDevice == VK_NULL_HANDLE)
+		{
+			throw std::runtime_error("failed to find a suitable GPU! 没有找到一个合适的GPU");
+		}
+	}
+
+	// 检测支持的GPU
+	bool isDeviceSuitable(VkPhysicalDevice device)
+	{
+		
+
+
+		return true;
 	}
 
 	
