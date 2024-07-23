@@ -8,6 +8,7 @@
 #include <cstdlib>
 
 #include <vector>
+#include <map>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -180,16 +181,33 @@ private:
 		std::vector<VkPhysicalDevice> devices(deviceCount);
 		vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
-		// 检测  拿到第一个
-
-		for (const auto& device : devices)
-		{
-			if (isDeviceSuitable(device))
-			{
+		// 选择第一个
+		for (const auto& device : devices) {
+			if (isDeviceSuitable(device)) {
 				physicalDevice = device;
 				break;
 			}
 		}
+	
+		// 按照特权加分 选择分数最高的显卡
+		std::multimap<int, VkPhysicalDevice> candidates;
+		for (const auto& device : devices)
+		{
+			int score = rateDeviceSuitability(device);
+			candidates.insert(std::make_pair(score, device));
+		}
+
+		// Check if the best candidate is suitable at all
+		if (candidates.rbegin()->first > 0) 
+		{
+			physicalDevice = candidates.rbegin()->second;
+		}
+		else 
+		{
+			throw std::runtime_error("failed to find a suitable GPU! 没有找到一个合适的GPU");
+		}
+
+
 
 		if (physicalDevice == VK_NULL_HANDLE)
 		{
@@ -197,11 +215,47 @@ private:
 		}
 	}
 
+	// 为每一个GPU打分
+	int rateDeviceSuitability(VkPhysicalDevice device)
+	{
+		// 获取GPU的信息
+		VkPhysicalDeviceProperties deviceProperties;
+		vkGetPhysicalDeviceProperties(device, &deviceProperties);
+
+		// 支持特性的查询
+		VkPhysicalDeviceFeatures deviceFeatures;
+		vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+		int score = 0;
+
+		//Discrete GPUs have a significant performance advantage
+		if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+			score += 1000;
+		}
+
+		// Maximum possible size of textures affects graphics quality
+		score += deviceProperties.limits.maxImageDimension2D;
+
+		// Application can't function without geometry shaders
+		if (!deviceFeatures.geometryShader) {
+			return 0;
+		}
+
+		return score;
+	}
+
 	// 检测支持的GPU
 	bool isDeviceSuitable(VkPhysicalDevice device)
 	{
-		
+		//// 获取GPU的信息
+		//VkPhysicalDeviceProperties deviceProperties;
+		//vkGetPhysicalDeviceProperties(device, &deviceProperties);
 
+		//// 支持特性的查询
+		//VkPhysicalDeviceFeatures deviceFeatures;
+		//vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+		//return deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && deviceFeatures.geometryShader;
 
 		return true;
 	}
