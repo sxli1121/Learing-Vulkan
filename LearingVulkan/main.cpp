@@ -6,9 +6,9 @@
 #include <iostream>
 #include <stdexcept>
 #include <cstdlib>
-
 #include <vector>
 #include <map>
+#include <optional>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -51,6 +51,19 @@ void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT
 }
 
 
+// 队列组的索引结构体
+struct QueueFamilyIndices
+{
+	std::optional<uint32_t> graphicsFamily;
+
+	bool isComplete()
+	{
+		return graphicsFamily.has_value();
+	}
+};
+
+
+
 class HelloTriangleApplication
 {
 public :
@@ -68,7 +81,7 @@ private:
 
 	VkDebugUtilsMessengerEXT debugMessenger; // 回调函数句柄
 
-
+	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE; // 设备
 
 	void initWindow() {
 		glfwInit();
@@ -79,15 +92,15 @@ private:
 		window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
 	}
 
+
 	void initVulkan()
 	{
 		createInstance();
-
 		setupDebugMessenger();
-
 		// 获取支持Vulkan的GPU
 		pickPhysicalDevice();
 	}
+
 
 	void mainLoop()
 	{
@@ -96,6 +109,22 @@ private:
 			glfwPollEvents();
 		}
 	}
+
+	void cleanup()
+	{
+		// 销毁校验层
+		if (enableValidationLayers)
+		{
+			DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+		}
+
+		vkDestroyInstance(instance, nullptr);
+
+		glfwDestroyWindow(window);
+
+		glfwTerminate();
+	}
+
 
 	void createInstance()
 	{
@@ -149,26 +178,35 @@ private:
 		}
 	}
 
-	void cleanup() 
+
+	// 为两个代理函数创建调试信息
+	void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
 	{
-		// 销毁校验层
-		if (enableValidationLayers)
-		{
-			DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+		createInfo = {};
+		createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+		createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+		createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+		createInfo.pfnUserCallback = debugCallback;// 设置回调函数
+	}
+
+
+	void setupDebugMessenger()
+	{
+		if (!enableValidationLayers) return;
+
+		VkDebugUtilsMessengerCreateInfoEXT createInfo;
+		populateDebugMessengerCreateInfo(createInfo);
+
+		if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
+			throw std::runtime_error("failed to set up debug messenger!无法设置调试信使");
 		}
-
-		vkDestroyInstance(instance, nullptr);
-
-		glfwDestroyWindow(window);
-
-		glfwTerminate();
 	}
 
 
 	// 查找支持的GPU
 	void pickPhysicalDevice()
 	{
-		VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+		//VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 
 		uint32_t deviceCount = 0;
 		vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
@@ -189,78 +227,70 @@ private:
 			}
 		}
 	
-		// 按照特权加分 选择分数最高的显卡
-		std::multimap<int, VkPhysicalDevice> candidates;
-		for (const auto& device : devices)
-		{
-			int score = rateDeviceSuitability(device);
-			candidates.insert(std::make_pair(score, device));
-		}
-
-		// Check if the best candidate is suitable at all
-		if (candidates.rbegin()->first > 0) 
-		{
-			physicalDevice = candidates.rbegin()->second;
-		}
-		else 
-		{
-			throw std::runtime_error("failed to find a suitable GPU! 没有找到一个合适的GPU");
-		}
-
-
-
 		if (physicalDevice == VK_NULL_HANDLE)
 		{
 			throw std::runtime_error("failed to find a suitable GPU! 没有找到一个合适的GPU");
 		}
 	}
 
-	// 为每一个GPU打分
-	int rateDeviceSuitability(VkPhysicalDevice device)
-	{
-		// 获取GPU的信息
-		VkPhysicalDeviceProperties deviceProperties;
-		vkGetPhysicalDeviceProperties(device, &deviceProperties);
-
-		// 支持特性的查询
-		VkPhysicalDeviceFeatures deviceFeatures;
-		vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
-
-		int score = 0;
-
-		//Discrete GPUs have a significant performance advantage
-		if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-			score += 1000;
-		}
-
-		// Maximum possible size of textures affects graphics quality
-		score += deviceProperties.limits.maxImageDimension2D;
-
-		// Application can't function without geometry shaders
-		if (!deviceFeatures.geometryShader) {
-			return 0;
-		}
-
-		return score;
-	}
 
 	// 检测支持的GPU
 	bool isDeviceSuitable(VkPhysicalDevice device)
 	{
-		//// 获取GPU的信息
-		//VkPhysicalDeviceProperties deviceProperties;
-		//vkGetPhysicalDeviceProperties(device, &deviceProperties);
+		QueueFamilyIndices indices = findQueueFamilies(device);
 
-		//// 支持特性的查询
-		//VkPhysicalDeviceFeatures deviceFeatures;
-		//vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
-
-		//return deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && deviceFeatures.geometryShader;
-
-		return true;
+		return indices.isComplete();
 	}
 
-	
+
+
+	// 查找设备支持的所有队列组
+	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device)
+	{
+		QueueFamilyIndices indices;
+
+		uint32_t queueFamilyCount = 0;
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+		std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+		int i = 0;
+		for (const auto& queueFamily : queueFamilies)
+		{
+			if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+			{
+				indices.graphicsFamily = i;
+			}
+
+			if (indices.isComplete())
+			{
+				break;
+			}
+			i++;
+		}
+
+		return indices;
+	}
+
+
+	// 开启校验层的时候返回调试回调信息--扩展列表
+	std::vector<const char*> getRequiredExtensions()
+	{
+		uint32_t glfwExtensionCount = 0;
+		const char** glfwExtensions;
+		glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+		std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+
+		if (enableValidationLayers)
+		{
+			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+		}
+		return extensions;
+	}
+
+
 	bool checkValidationLayerSupport()
 	{
 		// 获取所有校验层列表
@@ -290,26 +320,11 @@ private:
 		return true;
 	}
 
-	// 开启校验层的时候返回调试回调信息--扩展列表
-	std::vector<const char*> getRequiredExtensions()
-	{
-		uint32_t glfwExtensionCount = 0;
-		const char** glfwExtensions;
-		glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-		std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
-
-		if (enableValidationLayers)
-		{
-			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-		}
-		return extensions;
-	}
 
 
 	// 接受调试信息的回调函数
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
-		VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, 
+		VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 		VkDebugUtilsMessageTypeFlagsEXT messageType,
 		const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 		void* pUserData)
@@ -318,33 +333,6 @@ private:
 
 		return VK_FALSE;
 	}
-
-	// 为两个代理函数创建调试信息
-	void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
-	{
-		createInfo = {};
-		createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-		createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-		createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-		createInfo.pfnUserCallback = debugCallback;// 设置回调函数
-	}
-
-
-	void setupDebugMessenger()
-	{
-		if (!enableValidationLayers) return;
-
-		VkDebugUtilsMessengerCreateInfoEXT createInfo;
-		populateDebugMessengerCreateInfo(createInfo);
-
-		if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
-			throw std::runtime_error("failed to set up debug messenger!");
-		}
-
-	}
-
-
-
 
 };
 
