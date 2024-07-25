@@ -83,6 +83,10 @@ private:
 
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE; // 设备
 
+	VkDevice device; // 逻辑设备
+	VkQueue graphicsQueue;  // 逻辑设备的队列句柄
+
+
 	void initWindow() {
 		glfwInit();
 
@@ -99,6 +103,9 @@ private:
 		setupDebugMessenger();
 		// 获取支持Vulkan的GPU
 		pickPhysicalDevice();
+		// 创建逻辑设备--与物理设备交互
+		createLogicalDevice();
+
 	}
 
 
@@ -112,6 +119,10 @@ private:
 
 	void cleanup()
 	{
+		// 销毁逻辑设备
+		vkDestroyDevice(device, nullptr);
+
+
 		// 销毁校验层
 		if (enableValidationLayers)
 		{
@@ -233,6 +244,54 @@ private:
 		}
 	}
 
+	void createLogicalDevice()
+	{
+
+		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+
+		VkDeviceQueueCreateInfo queueCreateInfo{};
+		queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
+		queueCreateInfo.queueCount = 1;
+
+		float queuePriority = 1.0f;
+		queueCreateInfo.pQueuePriorities = &queuePriority;
+
+		// 指定设备的特性
+		VkPhysicalDeviceFeatures deviceFeatures{};
+
+		// 创建逻辑设备
+		VkDeviceCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+
+		createInfo.pQueueCreateInfos = &queueCreateInfo;
+		createInfo.queueCreateInfoCount = 1;
+
+		createInfo.pEnabledFeatures = &deviceFeatures;
+
+		createInfo.enabledExtensionCount = 0;
+
+		if (enableValidationLayers)
+		{
+			createInfo.enabledExtensionCount = static_cast<uint32_t>(validationLayers.size());
+			createInfo.ppEnabledExtensionNames = validationLayers.data();
+		}
+		else
+		{
+			createInfo.enabledLayerCount = 0;
+		}
+
+		// 实例化逻辑设备
+		if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS)
+		{
+			throw std::runtime_error("failed to create logical device! 创建逻辑设备错误");
+		}
+
+
+		vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
+
+	}
+
 
 	// 检测支持的GPU
 	bool isDeviceSuitable(VkPhysicalDevice device)
@@ -333,6 +392,9 @@ private:
 
 		return VK_FALSE;
 	}
+
+	// 创建逻辑设备
+
 
 };
 
