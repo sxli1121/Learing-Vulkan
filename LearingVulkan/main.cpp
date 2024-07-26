@@ -1,5 +1,4 @@
-﻿#include <vulkan/vulkan.h>
-
+﻿
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -9,6 +8,7 @@
 #include <vector>
 #include <map>
 #include <optional>
+#include <set>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -55,6 +55,7 @@ void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT
 struct QueueFamilyIndices
 {
 	std::optional<uint32_t> graphicsFamily;
+	std::optional<uint32_t> presentFamily;
 
 	bool isComplete()
 	{
@@ -85,6 +86,9 @@ private:
 
 	VkDevice device; // 逻辑设备
 	VkQueue graphicsQueue;  // 逻辑设备的队列句柄
+	VkQueue presentQueue;
+
+	VkSurfaceKHR surface; // 窗口
 
 
 	void initWindow() {
@@ -101,10 +105,9 @@ private:
 	{
 		createInstance();
 		setupDebugMessenger();
-		// 获取支持Vulkan的GPU
-		pickPhysicalDevice();
-		// 创建逻辑设备--与物理设备交互
-		createLogicalDevice();
+		createSurface();
+		pickPhysicalDevice(); 		// 获取支持Vulkan的GPU
+		createLogicalDevice();    	// 创建逻辑设备--与物理设备交互
 
 	}
 
@@ -128,6 +131,7 @@ private:
 		{
 			DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
 		}
+		vkDestroySurfaceKHR(instance, surface, nullptr);
 
 		vkDestroyInstance(instance, nullptr);
 
@@ -213,6 +217,14 @@ private:
 		}
 	}
 
+	void createSurface()
+	{
+		if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS)
+		{
+			throw std::runtime_error("failed to create window surface!无法创建窗口表面！");
+		}
+	}
+
 
 	// 查找支持的GPU
 	void pickPhysicalDevice()
@@ -249,13 +261,21 @@ private:
 
 		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
-		VkDeviceQueueCreateInfo queueCreateInfo{};
-		queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-		queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
-		queueCreateInfo.queueCount = 1;
+		std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+		std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(),indices.presentFamily.value() };
+
 
 		float queuePriority = 1.0f;
-		queueCreateInfo.pQueuePriorities = &queuePriority;
+		for (uint32_t queueFamily : uniqueQueueFamilies)
+		{
+			VkDeviceQueueCreateInfo queueCreateInfo{};
+			queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+			queueCreateInfo.queueFamilyIndex = queueFamily;
+			queueCreateInfo.queueCount = 1;
+			queueCreateInfo.pQueuePriorities = &queuePriority;
+			queueCreateInfos.push_back(queueCreateInfo);
+		}
+
 
 		// 指定设备的特性
 		VkPhysicalDeviceFeatures deviceFeatures{};
@@ -264,8 +284,8 @@ private:
 		VkDeviceCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 
-		createInfo.pQueueCreateInfos = &queueCreateInfo;
-		createInfo.queueCreateInfoCount = 1;
+		createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+		createInfo.pQueueCreateInfos = queueCreateInfos.data();
 
 		createInfo.pEnabledFeatures = &deviceFeatures;
 
@@ -289,8 +309,10 @@ private:
 
 
 		vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
+		vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
 
 	}
+
 
 
 	// 检测支持的GPU
@@ -306,6 +328,10 @@ private:
 	// 查找设备支持的所有队列组
 	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device)
 	{
+		VkBool32 presentSupport = false;
+
+
+
 		QueueFamilyIndices indices;
 
 		uint32_t queueFamilyCount = 0;
@@ -317,6 +343,13 @@ private:
 		int i = 0;
 		for (const auto& queueFamily : queueFamilies)
 		{
+
+			vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+			if (presentSupport)
+			{
+				indices.presentFamily = i;
+			}
+
 			if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
 			{
 				indices.graphicsFamily = i;
